@@ -4,6 +4,20 @@ const axios = require('axios').default;
 // Fetch api key from environment variable
 const apiKey = functions.config().spoonacular.key;
 
+// Define custom request config for api calls to Spoonacular
+const axiosSpoonacular = axios.create({
+    baseURL: 'https://api.spoonacular.com'
+});
+
+// Automatically add API key to all Spoonacular requests
+axiosSpoonacular.interceptors.request.use((config) => {
+    if (config.params === undefined || config.params === null) {
+        config.params = {}
+    }
+    config.params['apiKey'] = apiKey;
+    return config;
+});
+
 exports.recipesByIngredients = functions.https.onCall(async (data, context) => {
 
     // Deny unauthenticated requests
@@ -16,11 +30,8 @@ exports.recipesByIngredients = functions.https.onCall(async (data, context) => {
         
     try {
         // Call Spoonacular API findByIngredients endpoint
-        var res = await axios.get('https://api.spoonacular.com/recipes/findByIngredients',{
+        var res = await axiosSpoonacular.get('recipes/findByIngredients',{
             params: {
-                // Always need to pass in api key for authentication
-                apiKey: apiKey,
-
                 // Comma-separated list of ingredients that the recipes should contain
                 ingredients: ingredients,
 
@@ -45,6 +56,37 @@ exports.recipesByIngredients = functions.https.onCall(async (data, context) => {
             throw new functions.https.HttpsError('aborted', 'Error fetching recipes', error.response);
         }
         // Some kind of network/request error; return error message
+        throw new functions.https.HttpsError('unknown', 'Server error', {message: error.message});
+    }
+});
+
+exports.recipeInfo = functions.https.onCall(async (data, context) => {
+
+    // Deny unauthenticated requests
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Caller is not authenticated');
+    }
+
+    // TODO: Validate/format id from data
+    var id = data.id;
+        
+    try {
+        // Call Spoonacular API findByIngredients endpoint
+        var res = await axiosSpoonacular.get('recipes/' + id + '/information');
+
+        // If call was successful, return results directly
+        return res.data;
+    }
+    catch (error) {
+        // Return error-specific message if one exists
+        if (error.response) {
+            // Spoonacular responded with error; return it
+            // Obviously in production, this could be insecure (exposes backend info)
+            console.error(error.response);
+            throw new functions.https.HttpsError('aborted', 'Error fetching recipe info', error.response);
+        }
+        // Some kind of network/request error; return error message
+        console.error(error.message);
         throw new functions.https.HttpsError('unknown', 'Server error', {message: error.message});
     }
 });
