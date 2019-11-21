@@ -1,5 +1,14 @@
 const functions = require('firebase-functions');
 const axios = require('axios').default;
+const Firestore = require ('@google-cloud/firestore');
+
+// No idea if any of this is right.
+const PROJECTID = 'potluck-d1796';
+
+const firestore = new Firestore({
+    projectID: PROJECTID,
+    timestampsInSnapshots: true,
+});
 
 // Fetch api key from environment variable
 const apiKey = functions.config().spoonacular.key;
@@ -89,6 +98,28 @@ exports.recipeInfo = functions.https.onCall(async (data, context) => {
         console.error(error.message);
         throw new functions.https.HttpsError('unknown', 'Server error', {message: error.message});
     }
+});
+
+exports.newAccount = functions.auth.user().onCreate((user) => {
+    const email = user.email;
+    const id = user.uid;
+
+    // Check that session is not anonymous
+    if (user.providerData.length === 0){
+        return null;
+    } else {
+        // Create new doc within users collection and add user email and id
+        return firestore.collection('users')
+        .add({email, id})
+        .then(doc => {
+            return res.status(200).send(doc);
+        }).catch(err => {
+            // Some kind of error, I got this code from a Firestore/Functions tutorial
+            console.error(err);
+            return res.status(404).send({ error: 'unable to store', err});
+        });
+    }
+    // TODO: create new friends doc 
 });
 
 /*
