@@ -114,5 +114,34 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
         console.error(error);
     }
 
-    // TODO: create new friends doc 
+    try {
+        // Create new doc within friendLists collection and add user id and empty array of friend ids
+        await firestore.doc('friendLists' + id).create({
+            userId: id,
+            friendIds: []
+        });
+    }
+    catch (error) {
+        console.error(error);
+    }
 });
+
+exports.deleteAccount = functions.auth.user().onDelete(async (user) =>{
+    const id = user.uid;
+
+    try {
+        // Delete user's doc within users collection
+        await firestore.doc('users/' + id).delete();
+    }
+    catch (error) {
+        console.error(error);
+    }
+
+    try {
+        // Delete user's doc within friendLists collection
+        await firestore.doc('friendLists' + id).delete();
+    }
+    catch (error) {
+        console.error(error);
+    }
+})
