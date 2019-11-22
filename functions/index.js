@@ -116,7 +116,7 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
 
     try {
         // Create new doc within friendLists collection and add user id and empty array of friend ids
-        await firestore.doc('friendLists' + id).create({
+        await firestore.doc('friendLists/' + id).create({
             userId: id,
             friendIds: []
         });
@@ -124,6 +124,45 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
     catch (error) {
         console.error(error);
     }
+
+    try {
+        // Create new userData subcollection of user doc
+        await firestore.collection('users/'+id+'/userData').create();
+    }
+    catch (error) {
+        console.error(error);
+    }
+
+    try {
+        // Create new friendPantries doc within userData subcollection
+        await firestore.doc('users/'+id+'/userData/friendPantries').create({
+            pantries: []
+        });
+    }
+    catch (error) {
+        console.error(error);
+    }
+
+    try {
+        // Create new friendRequests doc within userData subcollection
+        await firestore.doc('users/'+id+'/userData/friendRequests').create({
+            requestIds: []
+        });
+    }
+    catch (error) {
+        console.error(error);
+    }
+
+    try {
+        // Create new pantry doc within userData subcollection
+        await firestore.doc('users/'+id+'/userData/pantry').create({
+            ingredients: []
+        });
+    }
+    catch (error) {
+        console.error(error);
+    }
+
 });
 
 exports.deleteAccount = functions.auth.user().onDelete(async (user) =>{
@@ -139,9 +178,10 @@ exports.deleteAccount = functions.auth.user().onDelete(async (user) =>{
 
     try {
         // Delete user's doc within friendLists collection
-        await firestore.doc('friendLists' + id).delete();
+        await firestore.doc('friendLists/' + id).delete();
     }
     catch (error) {
         console.error(error);
     }
+
 })
