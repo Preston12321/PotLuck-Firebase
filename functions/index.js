@@ -96,6 +96,42 @@ exports.recipeInfo = functions.https.onCall(async (data, context) => {
     }
 });
 
+exports.autocomplete = functions.https.onCall(async (data, context) => {
+
+    // TODO: somehow test this eventually 
+
+    // Deny unauthenticated requests
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Caller is not authenticated');
+    }
+
+    var query = data.query;
+
+    try {
+        // Call Spoonacular API autocomplete ingredient search endpoint
+        var res = await axiosSpoonacular.get('food/ingredients/autocomplete', {
+            params: {
+                query: query
+            }
+        });
+
+        // If call was successful, return results directly
+        return res.data;
+    }
+    catch (error) {
+        // Return error-specific message if one exists
+        if (error.response) {
+            // Spoonacular responded with error; return it
+            // Obviously in production, this could be insecure (exposes backend info)
+            console.error(error.response);
+            throw new functions.https.HttpsError('aborted', 'Error fetching ingredient suggestions', error.response);
+        }
+        // Some kind of network/request error; return error message
+        console.error(error.message);
+        throw new functions.https.HttpsError('unknown', 'Server error', { message: error.message });
+    }
+});
+
 exports.newAccount = functions.auth.user().onCreate(async (user) => {
     const email = user.email;
     const id = user.uid;
