@@ -103,85 +103,95 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
     // Check that session is not anonymous
     if (user.providerData.length === 0) return;
 
+    var batch = firestore.batch();
+
+    // Create new doc within users collection and add user email and id
+    var userDoc = firestore.collection('users').doc(id);
+    batch.create(userDoc, {
+        email: email,
+        userId: id
+    });
+
+    // Create new doc within friendLists collection and add user id and empty array of friend ids
+    var friendList = firestore.collection('friendLists').doc(id);
+    batch.create(friendList, {
+        userId: id,
+        friendIds: []
+    });
+
+    // Create new userData subcollection of user doc
+    var userData = userDoc.collection('userData');
+    // batch.create(userData);
+
+    // Create new friendPantries doc within userData subcollection
+    var friendPantries = userData.doc('friendPantries');
+    batch.create(friendPantries, {
+        pantries: []
+    });
+
+    // Create new friendRequests doc within userData subcollection
+    var friendRequests = userData.doc('friendRequests');
+    batch.create(friendRequests, {
+        requestIds: []
+    });
+
+    // Create new pantry doc within userData subcollection
+    var pantry = userData.doc('pantry');
+    batch.create(pantry, {
+        ingredients: []
+    });
+
     try {
-        // Create new doc within users collection and add user email and id
-        await firestore.doc('users/' + id).create({
-            email: email,
-            userId: id
-        });
+        await batch.commit();
     }
     catch (error) {
         console.error(error);
     }
-
-    try {
-        // Create new doc within friendLists collection and add user id and empty array of friend ids
-        await firestore.doc('friendLists/' + id).create({
-            userId: id,
-            friendIds: []
-        });
-    }
-    catch (error) {
-        console.error(error);
-    }
-
-    try {
-        // Create new userData subcollection of user doc
-        await firestore.collection('users/'+id+'/userData').create();
-    }
-    catch (error) {
-        console.error(error);
-    }
-
-    try {
-        // Create new friendPantries doc within userData subcollection
-        await firestore.doc('users/'+id+'/userData/friendPantries').create({
-            pantries: []
-        });
-    }
-    catch (error) {
-        console.error(error);
-    }
-
-    try {
-        // Create new friendRequests doc within userData subcollection
-        await firestore.doc('users/'+id+'/userData/friendRequests').create({
-            requestIds: []
-        });
-    }
-    catch (error) {
-        console.error(error);
-    }
-
-    try {
-        // Create new pantry doc within userData subcollection
-        await firestore.doc('users/'+id+'/userData/pantry').create({
-            ingredients: []
-        });
-    }
-    catch (error) {
-        console.error(error);
-    }
-
 });
 
-exports.deleteAccount = functions.auth.user().onDelete(async (user) =>{
+exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
     const id = user.uid;
 
+    var batch = firestore.batch();
+
+    // TODO: Update user's friends' friendPantries, friendRequests, and friendLists docs
+
+    // Delete user's doc within users collection
+    var userDoc = firestore.collection('users').doc(id);
+    await recursiveDelete(batch, userDoc);
+
+    // Delete user's doc within friendLists collection
+    var friendList = firestore.collection('friendLists').doc(id);
+    batch.delete(friendList);
+
     try {
-        // Delete user's doc within users collection
-        await firestore.doc('users/' + id).delete();
+        await batch.commit();
     }
     catch (error) {
         console.error(error);
     }
+});
 
-    try {
-        // Delete user's doc within friendLists collection
-        await firestore.doc('friendLists/' + id).delete();
-    }
-    catch (error) {
-        console.error(error);
-    }
+/**
+ * Recursively delete a document and the contents of all its subcollections.
+ * @param   {FirebaseFirestore.WriteBatch}          batch     The batched write object to which all the delete operations will be registered.
+ * @param   {FirebaseFirestore.DocumentReference}   document  The document to recursively delete.
+ */
+async function recursiveDelete(batch, document) {
+    var collections = await document.listCollections();
 
-})
+    var promises = collections.map(async (collection) => {
+
+        var documents = await collection.listDocuments();
+
+        var recursivePromises = documents.map(async (recursiveDocument) => {
+            await recursiveDelete(batch, recursiveDocument);
+        });
+
+        await Promise.all(recursivePromises);
+    });
+
+    await Promise.all(promises);
+
+    batch.delete(document);
+}
