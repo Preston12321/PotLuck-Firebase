@@ -20,13 +20,15 @@ service cloud.firestore {
         // User cannot change their userId within database
       	request.resource.data.userId == resource.data.userId;
 
-      // TODO: Separate out friendPantries (updated by cloud function, not user)
       match /userData/{document} {
         // Creation/deletion is handled by cloud functions
         allow create, delete: if false;
 
-      	// TODO: Make sure this works...
-      	allow read, update: if request.auth.uid == userId;
+      	allow read, update: if document == "friendRequests" && request.auth.uid == userId;
+
+      	allow read, update: if document == "pantry" && request.auth.uid == userId;
+
+      	allow read: if document == "friendPantries" && request.auth.uid == userId;
       }
     }
   }
