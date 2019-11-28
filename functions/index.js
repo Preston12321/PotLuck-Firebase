@@ -132,6 +132,42 @@ exports.autocomplete = functions.https.onCall(async (data, context) => {
     }
 });
 
+exports.addToPantry = functions.https.onCall(async (data, context) => {
+
+    // TODO: somehow test this eventually 
+
+    const id = context.auth.uid;
+
+    // Deny unauthenticated requests
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Caller is not authenticated');
+    }
+
+    var query = data.query;
+
+    try {
+        // Call Spoonacular API autocomplete ingredient search endpoint to check that it is a valud ingredient
+        var res = await axiosSpoonacular.get('food/ingredients/autocomplete', {
+            params: {
+                query: query
+            }
+        });
+
+        // If result is empty list, ingredient is not valid. Return nothing.
+        if (res.data.length === 0) {
+            return; // TODO: maybe add some error message? Or will that be handled on the front end?
+        } else {
+        // If ingredient is valid, add it to ingredients array of user's pantry document
+            firestore.collection('users/'+id+'/userData').doc(pantry).update({
+                ingredients: firebase.firestore.FieldValue.arrayUnion(query)
+            })
+            // TODO: eventually, update friends' friendPantries
+        }
+    } catch (error) {
+        console.error(error);
+    }
+});
+
 exports.newAccount = functions.auth.user().onCreate(async (user) => {
     const email = user.email;
     const id = user.uid;
@@ -165,10 +201,12 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
         pantries: []
     });
 
-    // Create new friendRequests doc within userData subcollection
+    // Create new friendRequests doc within userData subcollection, with requestToIds, requestFromIds, and removeIds arrays
     var friendRequests = userData.doc('friendRequests');
     batch.create(friendRequests, {
-        requestIds: []
+        requestToIds: [],
+        requestFromIds: [],
+        removeIds: []
     });
 
     // Create new pantry doc within userData subcollection
