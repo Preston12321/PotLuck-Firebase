@@ -98,7 +98,7 @@ exports.recipeInfo = functions.https.onCall(async (data, context) => {
 
 exports.autocomplete = functions.https.onCall(async (data, context) => {
 
-    // TODO: somehow test this eventually 
+    // TODO: somehow test this eventually
 
     // Deny unauthenticated requests
     if (!context.auth) {
@@ -134,7 +134,7 @@ exports.autocomplete = functions.https.onCall(async (data, context) => {
 
 exports.addToPantry = functions.https.onCall(async (data, context) => {
 
-    // TODO: somehow test this eventually 
+    // TODO: somehow test this eventually
 
     const id = context.auth.uid;
 
@@ -157,8 +157,8 @@ exports.addToPantry = functions.https.onCall(async (data, context) => {
         if (res.data.length === 0) {
             return; // TODO: maybe add some error message? Or will that be handled on the front end?
         } else {
-        // If ingredient is valid, add it to ingredients array of user's pantry document
-            firestore.collection('users/'+id+'/userData').doc(pantry).update({
+            // If ingredient is valid, add it to ingredients array of user's pantry document
+            firestore.collection('users/' + id + '/userData').doc(pantry).update({
                 ingredients: firebase.firestore.FieldValue.arrayUnion(query)
             })
             // TODO: eventually, update friends' friendPantries
@@ -166,6 +166,115 @@ exports.addToPantry = functions.https.onCall(async (data, context) => {
     } catch (error) {
         console.error(error);
     }
+});
+
+exports.manageFriends = functions.firestore.document('users/{userId}/userData/friendRequests').onUpdate(async (change, context) => {
+    const userId = context.params.userId;
+
+    var requestToBefore = change.before.data().requestToIds;
+    var requestToAfter = change.after.data().requestToIds;
+    const requestToChanged = !(JSON.stringify(requestToBefore) === JSON.stringify(requestToAfter));
+
+    var requestFromBefore = change.before.data().requestFromIds;
+    var requestFromAfter = change.after.data().requestFromIds;
+    const requestFromChanged = !(JSON.stringify(requestFromBefore) === JSON.stringify(requestFromAfter));
+
+    var removalsBefore = change.before.data().removeIds;
+    var removalsAfter = change.after.data().removeIds;
+    const removalsChanged = !(JSON.stringify(removalsBefore) === JSON.stringify(removalsAfter));
+
+    var promises = [];
+
+    if (requestToChanged) {
+        promises = promises.concat(requestToAfter.map((id) => {
+            if (requestToBefore.includes(id)) return Promise.resolve();
+
+            var ref = firestore.collection('users').doc(id).collection('userData').doc('friendRequests');
+            return firestore.runTransaction(async (transaction) => {
+                var doc = await transaction.get(ref);
+                var requestsFromIds = doc.data().requestsFromIds;
+
+                if (requestsFromIds.includes(userId)) return;
+
+                requestsFromIds.push(userId);
+                await transaction.update(doc, { 'requestFromIds': requestsFromIds });
+            });
+        }));
+    }
+
+    if (requestFromChanged) {
+        promises = promises.concat(requestFromAfter.map((id) => {
+            if (requestFromBefore.includes(id)) return Promise.resolve();
+
+            var ref1 = firestore.collection('users').doc(id).collection('userData').doc('friendRequests');
+            var ref2 = firestore.collection('users').doc(userId).collection('userData').doc('friendRequests');
+            var ref3 = firestore.collection('friendLists').doc(id);
+            var ref4 = firestore.collection('friendLists').doc(userId);
+            return firestore.runTransaction(async (transaction) => {
+                var docs = await transaction.getAll(ref1, ref2, ref3, ref4);
+
+                var requestsFromIds1 = docs[0].data().requestsFromIds;
+                var requestsFromIds2 = docs[1].data().requestsFromIds;
+
+                var friendIds1 = docs[2].data().friendIds;
+                var friendIds2 = docs[3].data().friendIds;
+
+                var clearRequests = false;
+
+                // Already friends. Remove requests from both friendRequests docs
+                if (friendIds1.includes(userId) && friendIds2.includes(id)) {
+                    clearRequests = true;
+                }
+
+                // Both users have requested friendship. Make them friends
+                if (requestsFromIds1.includes(userId) && clearRequests == false) {
+                    friendIds1.push(userId);
+                    friendIds2.push(id);
+
+                    transaction.update(ref3, { 'friendIds': friendIds1 });
+                    transaction.update(ref4, { 'friendIds': friendIds2 });
+
+                    clearRequests = true;
+                }
+
+                // Clear ids from both users' friendRequest docs
+                if (clearRequests) {
+                    var requestsToIds1 = docs[0].data().requestsFromIds;
+                    var requestsToIds2 = docs[1].data().requestsFromIds;
+
+                    // Remove each respective user's id from other user's doc wherever present
+                    requestsFromIds1.splice(requestsFromIds1.indexOf(userId), requestsFromIds1.includes(userId) ? 1 : 0);
+                    requestsFromIds2.splice(requestsFromIds2.indexOf(id), requestsFromIds2.includes(id) ? 1 : 0);
+                    requestsToIds1.splice(requestsToIds1.indexOf(userId), requestsFromIds1.includes(userId) ? 1 : 0);
+                    requestsToIds2.splice(requestsToIds2.indexOf(id), requestsFromIds2.includes(id) ? 1 : 0);
+
+                    transaction.update(ref1, { 'requestsFromIds': requestsFromIds1, 'requestsToIds': requestsToIds1 });
+                    transaction.update(ref2, { 'requestsFromIds': requestsFromIds2, 'requestsToIds': requestsToIds2 });
+                }
+            });
+        }));
+    }
+
+    if (removalsChanged) {
+        promises = promises.concat(removalsAfter.map((id) => {
+            var ref1 = firestore.collection('friendLists').doc(id);
+            var ref2 = firestore.collection('friendLists').doc(userId);
+            return firestore.runTransaction(async (transaction) => {
+                var docs = await transaction.getAll(ref1, ref2);
+                var friendIds1 = docs[0];
+                var friendIds2 = docs[1];
+
+                // Remove user id from other user's friend list if present
+                friendIds1.splice(friendIds1.indexOf(userId), friendIds1.includes(userId) ? 1 : 0);
+                friendIds2.splice(friendIds2.indexOf(id), friendIds2.includes(id) ? 1 : 0);
+
+                transaction.update(ref1, { 'friendIds': friendIds1 });
+                transaction.update(ref2, { 'friendIds': friendIds2 });
+            });
+        }));
+    }
+
+    await Promise.all(promises);
 });
 
 exports.newAccount = functions.auth.user().onCreate(async (user) => {
