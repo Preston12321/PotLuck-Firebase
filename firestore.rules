@@ -24,7 +24,9 @@ service cloud.firestore {
         // Creation/deletion is handled by cloud functions
         allow create, delete: if false;
 
-      	allow read, update: if document == "friendRequests" && request.auth.uid == userId;
+      	allow read, update: if document == "friendRequests" &&
+          request.auth.uid == userId &&
+          request.resource.data.requestFromIds == resource.data.requestFromIds;
 
       	allow read, update: if document == "pantry" && request.auth.uid == userId;
 
