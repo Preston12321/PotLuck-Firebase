@@ -132,40 +132,32 @@ exports.autocomplete = functions.https.onCall(async (data, context) => {
     }
 });
 
-exports.addToPantry = functions.https.onCall(async (data, context) => {
-
-    // TODO: somehow test this eventually
-
-    const id = context.auth.uid;
-
-    // Deny unauthenticated requests
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Caller is not authenticated');
-    }
-
-    var query = data.query;
-
-    try {
-        // Call Spoonacular API autocomplete ingredient search endpoint to check that it is a valud ingredient
-        var res = await axiosSpoonacular.get('food/ingredients/autocomplete', {
-            params: {
-                query: query
+exports.updateFriendPantries = functions.firestore.document('/users/{userId}/userData/pantry').onUpdate(async (change, context) => {
+    var pantry = change.after.data().ingredients;
+    var userId = context.params.userId;
+    // get data from friendList collection
+    var friendDoc = await firestore.collection('friendLists').doc(userId).get();
+    var friendArray = friendDoc.data().friendIds;
+    // loop through friend IDs
+    friendArray.forEach((friendId) => {
+        // get friendpantries, copy the whole array, find map corresponding to ID, update pantry array, and write over old FP array with update
+        var fpDoc = await firestore.collection('users/'+friendId+'/userData').doc(friendPantries).get();
+        var friendPantries = fpDoc.data().friendPantries;
+        friendPantries.forEach((map, index) => {
+            if (map.id === userId){
+                map.pantry = pantry;
+                friendPantries[index] = map;
             }
-        });
-
-        // If result is empty list, ingredient is not valid. Return nothing.
-        if (res.data.length === 0) {
-            return; // TODO: maybe add some error message? Or will that be handled on the front end?
-        } else {
-            // If ingredient is valid, add it to ingredients array of user's pantry document
-            firestore.collection('users/' + id + '/userData').doc(pantry).update({
-                ingredients: firebase.firestore.FieldValue.arrayUnion(query)
+        })
+        try { 
+            await firestore.collection('users/'+friendId+'/userData').doc('friendPantries').update({
+            friendPantries: friendPantries
             })
-            // TODO: eventually, update friends' friendPantries
+        } 
+        catch (error) {
+            console.error(error);
         }
-    } catch (error) {
-        console.error(error);
-    }
+    });
 });
 
 exports.manageFriends = functions.firestore.document('users/{userId}/userData/friendRequests').onUpdate(async (change, context) => {
@@ -304,10 +296,10 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
     var userData = userDoc.collection('userData');
     // batch.create(userData);
 
-    // Create new friendPantries doc within userData subcollection
+    // Create new friendPantries doc within userData subcollection, with an empty list of friendPantries
     var friendPantries = userData.doc('friendPantries');
     batch.create(friendPantries, {
-        pantries: []
+        friendPantries : []
     });
 
     // Create new friendRequests doc within userData subcollection, with requestToIds, requestFromIds, and removeIds arrays
