@@ -139,7 +139,7 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
     var friendDoc = await firestore.collection('friendLists').doc(userId).get();
     var friendArray = friendDoc.data().friendIds;
     // loop through friend IDs
-    friendArray.forEach((friendId) => {
+    friendArray.forEach(async(friendId) => {
         // get friendpantries, copy the whole array, find map corresponding to ID, update pantry array, and write over old FP array with update
         var fpDoc = await firestore.collection('users/'+friendId+'/userData').doc(friendPantries).get();
         var friendPantries = fpDoc.data().friendPantries;
@@ -219,7 +219,7 @@ exports.manageFriends = functions.firestore.document('users/{userId}/userData/fr
                 }
 
                 // Both users have requested friendship. Make them friends
-                if (requestsFromIds1.includes(userId) && clearRequests == false) {
+                if (requestsFromIds1.includes(userId) && clearRequests === false) {
                     friendIds1.push(userId);
                     friendIds2.push(id);
 
