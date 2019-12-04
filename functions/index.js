@@ -139,28 +139,28 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
     var friendDoc = await firestore.collection('friendLists').doc(userId).get();
     var friendArray = friendDoc.data().friendIds;
     // loop through friend IDs
-    friendArray.forEach(async(friendId) => {
+    friendArray.forEach(async (friendId) => {
         // get friendpantries, copy the whole array, find map corresponding to ID, update pantry array, and write over old FP array with update
-        var fpDoc = await firestore.collection('users/'+friendId+'/userData').doc(friendPantries).get();
+        var fpDoc = await firestore.collection('users/' + friendId + '/userData').doc(friendPantries).get();
         var friendPantries = fpDoc.data().friendPantries;
         friendPantries.forEach((map, index) => {
-            if (map.id === userId){
+            if (map.id === userId) {
                 map.pantry = pantry;
                 friendPantries[index] = map;
             }
         })
-        try { 
-            await firestore.collection('users/'+friendId+'/userData').doc('friendPantries').update({
-            friendPantries: friendPantries
+        try {
+            await firestore.collection('users/' + friendId + '/userData').doc('friendPantries').update({
+                friendPantries: friendPantries
             })
-        } 
+        }
         catch (error) {
             console.error(error);
         }
     });
 });
 
-exports.manageFriends = functions.firestore.document('users/{userId}/userData/friendRequests').onUpdate(async (change, context) => {
+exports.manageFriendRequests = functions.firestore.document('users/{userId}/userData/friendRequests').onUpdate(async (change, context) => {
     const userId = context.params.userId;
 
     var requestToBefore = change.before.data().requestToIds;
@@ -266,7 +266,52 @@ exports.manageFriends = functions.firestore.document('users/{userId}/userData/fr
         }));
     }
 
-    await Promise.all(promises);
+    try {
+        await Promise.all(promises);
+    } catch (error) {
+        console.error(error.message);
+    }
+});
+
+exports.manageFriendList = functions.firestore.document('friendLists/{userId}').onUpdate(async (change, context) => {
+    const userId = context.params.userId;
+
+    var userDoc = await firestore.collection('users').doc(userId).get();
+    var userEmail = userDoc.data().email;
+
+    var userPantryDoc = await userDoc.ref.collection('userData').doc('pantry').get();
+    var userPantry = userPantryDoc.data().ingredients;
+
+    var friends = change.after.data().friendIds;
+    var friendsBefore = change.after.data().friendIds;
+
+    var promises = friends.map((id) => {
+        if (friendsBefore.includes(id)) return Promise.resolve();
+
+        var ref = firestore.collection('users').doc(id).collection('userData').doc('friendPantries');
+        return firestore.runTransaction(async (transaction) => {
+            var doc = await transaction.get(ref);
+            var pantries = doc.data().friendPantries;
+
+            var friendPantry = {
+                id: userId,
+                email: userEmail,
+                pantry: userPantry
+            };
+
+            pantries.push(friendPantry);
+
+            transaction.update(ref, {
+                friendPantries: pantries
+            });
+        });
+    });
+
+    try {
+        await Promise.all(promises);
+    } catch (error) {
+        console.error(error.message);
+    }
 });
 
 exports.newAccount = functions.auth.user().onCreate(async (user) => {
@@ -299,7 +344,7 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
     // Create new friendPantries doc within userData subcollection, with an empty list of friendPantries
     var friendPantries = userData.doc('friendPantries');
     batch.create(friendPantries, {
-        friendPantries : []
+        friendPantries: []
     });
 
     // Create new friendRequests doc within userData subcollection, with requestToIds, requestFromIds, and removeIds arrays
