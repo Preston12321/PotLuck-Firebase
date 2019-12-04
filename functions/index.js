@@ -143,8 +143,8 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
     // loop through friend IDs
     var promises = friendArray.forEach(async (friendId) => {
         // get friendpantries, copy the whole array, find map corresponding to ID, update pantry array, and write over old FP array with update
+        var fpRef = firestore.collection('users/' + friendId + '/userData').doc('friendPantries');
         return firestore.runTransaction(async (transaction) => {
-            var fpRef = firestore.collection('users/' + friendId + '/userData').doc('friendPantries')
             var fpDoc = await transaction.get(fpRef);
             var friendPantries = fpDoc.data().friendPantries;
             friendPantries.forEach((map, index) => {
@@ -153,7 +153,7 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
                     friendPantries[index] = map;
                 }
             });
-            await transaction.update(fpRef, { friendPantries: friendPantries });
+            transaction.update(fpRef, { friendPantries: friendPantries });
         })
     });
 
@@ -189,12 +189,12 @@ exports.manageFriendRequests = functions.firestore.document('users/{userId}/user
             var ref = firestore.collection('users').doc(id).collection('userData').doc('friendRequests');
             return firestore.runTransaction(async (transaction) => {
                 var doc = await transaction.get(ref);
-                var requestsFromIds = doc.data().requestsFromIds;
+                var requestFromIds = doc.data().requestFromIds;
 
-                if (requestsFromIds.includes(userId)) return;
+                if (requestFromIds.includes(userId)) return;
 
-                requestsFromIds.push(userId);
-                await transaction.update(doc, { 'requestFromIds': requestsFromIds });
+                requestFromIds.push(userId);
+                transaction.update(ref, { 'requestFromIds': requestFromIds });
             });
         }));
     }
@@ -210,8 +210,8 @@ exports.manageFriendRequests = functions.firestore.document('users/{userId}/user
             return firestore.runTransaction(async (transaction) => {
                 var docs = await transaction.getAll(ref1, ref2, ref3, ref4);
 
-                var requestsFromIds1 = docs[0].data().requestsFromIds;
-                var requestsFromIds2 = docs[1].data().requestsFromIds;
+                var requestFromIds1 = docs[0].data().requestFromIds;
+                var requestFromIds2 = docs[1].data().requestFromIds;
 
                 var friendIds1 = docs[2].data().friendIds;
                 var friendIds2 = docs[3].data().friendIds;
@@ -224,7 +224,7 @@ exports.manageFriendRequests = functions.firestore.document('users/{userId}/user
                 }
 
                 // Both users have requested friendship. Make them friends
-                if (requestsFromIds1.includes(userId) && clearRequests === false) {
+                if (requestFromIds1.includes(userId) && clearRequests === false) {
                     friendIds1.push(userId);
                     friendIds2.push(id);
 
@@ -236,17 +236,17 @@ exports.manageFriendRequests = functions.firestore.document('users/{userId}/user
 
                 // Clear ids from both users' friendRequest docs
                 if (clearRequests) {
-                    var requestsToIds1 = docs[0].data().requestsFromIds;
-                    var requestsToIds2 = docs[1].data().requestsFromIds;
+                    var requestToIds1 = docs[0].data().requestFromIds;
+                    var requestToIds2 = docs[1].data().requestFromIds;
 
                     // Remove each respective user's id from other user's doc wherever present
-                    requestsFromIds1.splice(requestsFromIds1.indexOf(userId), requestsFromIds1.includes(userId) ? 1 : 0);
-                    requestsFromIds2.splice(requestsFromIds2.indexOf(id), requestsFromIds2.includes(id) ? 1 : 0);
-                    requestsToIds1.splice(requestsToIds1.indexOf(userId), requestsFromIds1.includes(userId) ? 1 : 0);
-                    requestsToIds2.splice(requestsToIds2.indexOf(id), requestsFromIds2.includes(id) ? 1 : 0);
+                    requestFromIds1.splice(requestFromIds1.indexOf(userId), requestFromIds1.includes(userId) ? 1 : 0);
+                    requestFromIds2.splice(requestFromIds2.indexOf(id), requestFromIds2.includes(id) ? 1 : 0);
+                    requestToIds1.splice(requestToIds1.indexOf(userId), requestToIds1.includes(userId) ? 1 : 0);
+                    requestToIds2.splice(requestToIds2.indexOf(id), requestToIds2.includes(id) ? 1 : 0);
 
-                    transaction.update(ref1, { 'requestsFromIds': requestsFromIds1, 'requestsToIds': requestsToIds1 });
-                    transaction.update(ref2, { 'requestsFromIds': requestsFromIds2, 'requestsToIds': requestsToIds2 });
+                    transaction.update(ref1, { 'requestFromIds': requestFromIds1, 'requestToIds': requestToIds1 });
+                    transaction.update(ref2, { 'requestFromIds': requestFromIds2, 'requestToIds': requestToIds2 });
                 }
             });
         }));
@@ -256,10 +256,19 @@ exports.manageFriendRequests = functions.firestore.document('users/{userId}/user
         promises = promises.concat(removalsAfter.map((id) => {
             var ref1 = firestore.collection('friendLists').doc(id);
             var ref2 = firestore.collection('friendLists').doc(userId);
+            var ref3 = firestore.collection('users').doc(userId).collection('userData').doc('friendRequests');
             return firestore.runTransaction(async (transaction) => {
-                var docs = await transaction.getAll(ref1, ref2);
-                var friendIds1 = docs[0];
-                var friendIds2 = docs[1];
+                var docs = await transaction.getAll(ref1, ref2, ref3);
+                var friendIds1 = docs[0].data().friendIds;
+                var friendIds2 = docs[1].data().friendIds;
+                var removeIdsOld = docs[2].data().removeIds;
+
+                // Remove id from removeIds in friendRequests doc
+                var removeIdsNew = [];
+                removeIdsOld.forEach((removalId) => {
+                    if (removalId === id) return;
+                    removeIdsNew.push(removalId);
+                });
 
                 // Remove user id from other user's friend list if present
                 friendIds1.splice(friendIds1.indexOf(userId), friendIds1.includes(userId) ? 1 : 0);
@@ -267,6 +276,7 @@ exports.manageFriendRequests = functions.firestore.document('users/{userId}/user
 
                 transaction.update(ref1, { 'friendIds': friendIds1 });
                 transaction.update(ref2, { 'friendIds': friendIds2 });
+                transaction.update(ref3, { 'removeIds': removeIdsNew });
             });
         }));
     }
