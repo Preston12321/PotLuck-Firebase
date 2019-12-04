@@ -133,8 +133,8 @@ exports.autocomplete = functions.https.onCall(async (data, context) => {
 });
 
 exports.updateFriendPantries = functions.firestore.document('/users/{userId}/userData/pantry').onUpdate(async (change, context) => {
+    const userId = context.params.userId;
     var pantry = change.after.data().ingredients;
-    var userId = context.params.userId;
     // get data from friendList collection
     var friendDoc = await firestore.collection('friendLists').doc(userId).get();
     var friendArray = friendDoc.data().friendIds;
@@ -325,22 +325,54 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
 });
 
 exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
-    const id = user.uid;
-
+    const userId = user.uid;
+    var promises = [];
     var batch = firestore.batch();
 
-    // TODO: Update user's friends' friendPantries, friendRequests, and friendLists docs
+    // Get user's list of friends
+    var friendDoc = await firestore.collection('friendLists').doc(userId).get();
+    var friendArray = friendDoc.data().friendIds;
+
+    // Loop through each friend
+    promises = promises.concat(friendArray.forEach(async(friendId)=> {
+        var fpRef = firestore.collection('users/'+friendId+'/userData').doc('friendPantries');
+        var flRef = firestore.collection('friendLists').doc('friendId');
+        return firestore.runTransaction(async (transaction) => {
+            // remove user from each friend's friendPantries
+            var fpDoc = await fpRef.get();
+            var friendPantries = fpDoc.data().friendPantries;
+            var pantryIndex;
+            friendPantries.forEach((map, index) => {
+                if (map.id === userId){
+                    pantryIndex = index;
+                }
+            })
+            friendPantries.splice(pantryIndex, 1);
+            await fpRef.update({
+                friendPantries: friendPantries
+            })
+            // remove user from each friend's friendList
+            var flDoc = await flRef.get();
+            var friendIds = friendDoc.data().friendIds;
+            var flIndex = friendIds.indexOf(userId);
+            friendIds.splice(flIndex, 1);
+            await flRef.update({
+                friendIds: friendIds
+            })
+        });
+    }))
 
     // Delete user's doc within users collection
-    var userDoc = firestore.collection('users').doc(id);
+    var userDoc = firestore.collection('users').doc(userId);
     await recursiveDelete(batch, userDoc);
 
     // Delete user's doc within friendLists collection
-    var friendList = firestore.collection('friendLists').doc(id);
+    var friendList = firestore.collection('friendLists').doc(userId);
     batch.delete(friendList);
 
     try {
         await batch.commit();
+        await Promise.all(promises);
     }
     catch (error) {
         console.error(error);
