@@ -135,14 +135,13 @@ exports.autocomplete = functions.https.onCall(async (data, context) => {
 exports.updateFriendPantries = functions.firestore.document('/users/{userId}/userData/pantry').onUpdate(async (change, context) => {
     const userId = context.params.userId;
     var pantry = change.after.data().ingredients;
-    var promises = [];
-    
+
     // get data from friendList collection
     var friendDoc = await firestore.collection('friendLists').doc(userId).get();
     var friendArray = friendDoc.data().friendIds;
-    
+
     // loop through friend IDs
-    promises = promises.concat(friendArray.forEach(async (friendId) => {
+    var promises = friendArray.forEach(async (friendId) => {
         // get friendpantries, copy the whole array, find map corresponding to ID, update pantry array, and write over old FP array with update
         return firestore.runTransaction(async (transaction) => {
             var fpRef = firestore.collection('users/' + friendId + '/userData').doc('friendPantries')
@@ -154,15 +153,15 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
                     friendPantries[index] = map;
                 }
             });
-            await transaction.update(fpDoc, {friendPantries: friendPantries});
-        })   
-    }));
+            await transaction.update(fpDoc, { friendPantries: friendPantries });
+        })
+    });
 
     try {
         await Promise.all(promises);
     } catch (error) {
         console.error(error.message);
-    } 
+    }
 
 });
 
@@ -388,7 +387,7 @@ exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
         var fpRef = firestore.collection('users/' + friendId + '/userData').doc('friendPantries');
         var flRef = firestore.collection('friendLists').doc('friendId');
         return firestore.runTransaction(async (transaction) => {
-            
+
             // remove user from each friend's friendPantries
             var fpDoc = await transaction.get(fpRef);
             var friendPantries = fpDoc.data().friendPantries;
@@ -399,14 +398,14 @@ exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
                 }
             });
             friendPantries.splice(pantryIndex, 1);
-            await transaction.update(fpDoc, {friendPantries: friendPantries});
-            
+            transaction.update(fpRef, { friendPantries: friendPantries });
+
             // remove user from each friend's friendList
             var flDoc = await transaction.get(flRef);
-            var friendIds = friendDoc.data().friendIds;
+            var friendIds = flDoc.data().friendIds;
             var flIndex = friendIds.indexOf(userId);
             friendIds.splice(flIndex, 1);
-            await transaction.update(flDoc, {friendIds: friendIds});
+            transaction.update(flRef, { friendIds: friendIds });
         });
     });
 
