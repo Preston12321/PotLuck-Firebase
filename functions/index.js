@@ -298,7 +298,7 @@ exports.manageFriendList = functions.firestore.document('friendLists/{userId}').
     var userPantry = userPantryDoc.data().ingredients;
 
     var friends = change.after.data().friendIds;
-    var friendsBefore = change.after.data().friendIds;
+    var friendsBefore = change.before.data().friendIds;
 
     var promises = friends.map((id) => {
         if (friendsBefore.includes(id)) return Promise.resolve();
