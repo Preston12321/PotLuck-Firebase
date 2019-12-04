@@ -135,29 +135,35 @@ exports.autocomplete = functions.https.onCall(async (data, context) => {
 exports.updateFriendPantries = functions.firestore.document('/users/{userId}/userData/pantry').onUpdate(async (change, context) => {
     const userId = context.params.userId;
     var pantry = change.after.data().ingredients;
+    var promises = [];
+    
     // get data from friendList collection
     var friendDoc = await firestore.collection('friendLists').doc(userId).get();
     var friendArray = friendDoc.data().friendIds;
+    
     // loop through friend IDs
-    friendArray.forEach(async (friendId) => {
+    promises = promises.concat(friendArray.forEach(async (friendId) => {
         // get friendpantries, copy the whole array, find map corresponding to ID, update pantry array, and write over old FP array with update
-        var fpDoc = await firestore.collection('users/' + friendId + '/userData').doc(friendPantries).get();
-        var friendPantries = fpDoc.data().friendPantries;
-        friendPantries.forEach((map, index) => {
-            if (map.id === userId) {
-                map.pantry = pantry;
-                friendPantries[index] = map;
-            }
-        })
-        try {
-            await firestore.collection('users/' + friendId + '/userData').doc('friendPantries').update({
-                friendPantries: friendPantries
-            })
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
+        return firestore.runTransaction(async (transaction) => {
+            var fpRef = firestore.collection('users/' + friendId + '/userData').doc('friendPantries')
+            var fpDoc = await transaction.get(fpRef);
+            var friendPantries = fpDoc.data().friendPantries;
+            friendPantries.forEach((map, index) => {
+                if (map.id === userId) {
+                    map.pantry = pantry;
+                    friendPantries[index] = map;
+                }
+            });
+            await transaction.update(fpDoc, {friendPantries: friendPantries});
+        })   
+    }));
+
+    try {
+        await Promise.all(promises);
+    } catch (error) {
+        console.error(error.message);
+    } 
+
 });
 
 exports.manageFriendRequests = functions.firestore.document('users/{userId}/userData/friendRequests').onUpdate(async (change, context) => {
@@ -383,27 +389,25 @@ exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
         var fpRef = firestore.collection('users/'+friendId+'/userData').doc('friendPantries');
         var flRef = firestore.collection('friendLists').doc('friendId');
         return firestore.runTransaction(async (transaction) => {
+            
             // remove user from each friend's friendPantries
-            var fpDoc = await fpRef.get();
+            var fpDoc = await transaction.get(fpRef);
             var friendPantries = fpDoc.data().friendPantries;
             var pantryIndex;
             friendPantries.forEach((map, index) => {
                 if (map.id === userId){
                     pantryIndex = index;
                 }
-            })
+            });
             friendPantries.splice(pantryIndex, 1);
-            await fpRef.update({
-                friendPantries: friendPantries
-            })
+            await transaction.update(fpDoc, {friendPantries: friendPantries});
+            
             // remove user from each friend's friendList
-            var flDoc = await flRef.get();
+            var flDoc = await transaction.get(flRef);
             var friendIds = friendDoc.data().friendIds;
             var flIndex = friendIds.indexOf(userId);
             friendIds.splice(flIndex, 1);
-            await flRef.update({
-                friendIds: friendIds
-            })
+            await transaction.update(flDoc, {friendIds: friendIds});
         });
     }))
 
