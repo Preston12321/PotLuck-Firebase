@@ -377,7 +377,6 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
 
 exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
     const userId = user.uid;
-    var promises = [];
     var batch = firestore.batch();
 
     // Get user's list of friends
@@ -385,8 +384,8 @@ exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
     var friendArray = friendDoc.data().friendIds;
 
     // Loop through each friend
-    promises = promises.concat(friendArray.forEach(async(friendId)=> {
-        var fpRef = firestore.collection('users/'+friendId+'/userData').doc('friendPantries');
+    var promises = friendArray.forEach(async (friendId) => {
+        var fpRef = firestore.collection('users/' + friendId + '/userData').doc('friendPantries');
         var flRef = firestore.collection('friendLists').doc('friendId');
         return firestore.runTransaction(async (transaction) => {
             
@@ -395,7 +394,7 @@ exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
             var friendPantries = fpDoc.data().friendPantries;
             var pantryIndex;
             friendPantries.forEach((map, index) => {
-                if (map.id === userId){
+                if (map.id === userId) {
                     pantryIndex = index;
                 }
             });
@@ -409,7 +408,7 @@ exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
             friendIds.splice(flIndex, 1);
             await transaction.update(flDoc, {friendIds: friendIds});
         });
-    }))
+    });
 
     // Delete user's doc within users collection
     var userDoc = firestore.collection('users').doc(userId);
