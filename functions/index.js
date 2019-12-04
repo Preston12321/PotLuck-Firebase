@@ -153,7 +153,7 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
                     friendPantries[index] = map;
                 }
             });
-            await transaction.update(fpDoc, { friendPantries: friendPantries });
+            await transaction.update(fpRef, { friendPantries: friendPantries });
         })
     });
 
