@@ -395,11 +395,14 @@ exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
     // Loop through each friend
     var promises = friendArray.forEach(async (friendId) => {
         var fpRef = firestore.collection('users/' + friendId + '/userData').doc('friendPantries');
-        var flRef = firestore.collection('friendLists').doc('friendId');
+        var flRef = firestore.collection('friendLists').doc(friendId);
         return firestore.runTransaction(async (transaction) => {
 
-            // remove user from each friend's friendPantries
+            // get docs
             var fpDoc = await transaction.get(fpRef);
+            var flDoc = await transaction.get(flRef);
+
+            // remove user from each friend's friendPantries
             var friendPantries = fpDoc.data().friendPantries;
             var pantryIndex;
             friendPantries.forEach((map, index) => {
@@ -411,7 +414,6 @@ exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
             transaction.update(fpRef, { friendPantries: friendPantries });
 
             // remove user from each friend's friendList
-            var flDoc = await transaction.get(flRef);
             var friendIds = flDoc.data().friendIds;
             var flIndex = friendIds.indexOf(userId);
             friendIds.splice(flIndex, 1);
