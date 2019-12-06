@@ -293,6 +293,7 @@ exports.manageFriendList = functions.firestore.document('friendLists/{userId}').
 
     var userDoc = await firestore.collection('users').doc(userId).get();
     var userEmail = userDoc.data().email;
+    var userImage = userDoc.data().imageURI
 
     var userPantryDoc = await userDoc.ref.collection('userData').doc('pantry').get();
     var userPantry = userPantryDoc.data().ingredients;
@@ -311,6 +312,7 @@ exports.manageFriendList = functions.firestore.document('friendLists/{userId}').
             var friendPantry = {
                 id: userId,
                 email: userEmail,
+                imageURI: userImage,
                 pantry: userPantry
             };
 
@@ -342,7 +344,8 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
     var userDoc = firestore.collection('users').doc(id);
     batch.create(userDoc, {
         email: email,
-        userId: id
+        userId: id,
+        imageURI: "gs://potluck-d1796.appspot.com/users/images/profile.png"
     });
 
     // Create new doc within friendLists collection and add user id and empty array of friend ids
