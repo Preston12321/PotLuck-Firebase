@@ -47,7 +47,11 @@ exports.recipesByIngredients = functions.https.onCall(async (data, context) => {
                 ranking: 1,
 
                 // Ignore typical pantry items, such as water, salt, flour, etc.
-                ignorePantry: true
+                ignorePantry: true,
+
+                // Fetch 30 results
+                number: 30
+
             }
         });
         // If call was successful, return results directly
@@ -97,8 +101,6 @@ exports.recipeInfo = functions.https.onCall(async (data, context) => {
 });
 
 exports.autocomplete = functions.https.onCall(async (data, context) => {
-
-    // TODO: somehow test this eventually
 
     // Deny unauthenticated requests
     if (!context.auth) {
@@ -150,6 +152,42 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
             friendPantries.forEach((map, index) => {
                 if (map.id === userId) {
                     map.pantry = pantry;
+                    friendPantries[index] = map;
+                }
+            });
+            transaction.update(fpRef, { friendPantries: friendPantries });
+        })
+    });
+
+    try {
+        await Promise.all(promises);
+    } catch (error) {
+        console.error(error.message);
+    }
+
+});
+
+exports.updateFriendInfo = functions.firestore.document('/users/{userID}').onUpdate(async (change, context) => {
+
+    const userId = context.params.userId; // This isn't working from console but should work from within app
+    var email = change.after.data().email;
+    var image = change.after.data().imageURI;
+
+    // get data from friendList collection
+    var friendDoc = await firestore.collection('friendLists').doc(userId).get();
+    var friendArray = friendDoc.data().friendIds;
+
+    // loop through friend IDs
+    var promises = friendArray.forEach(async (friendId) => {
+        // get friendpantries, copy the whole array, find map corresponding to ID, update email and image, and write over old FP array with update
+        var fpRef = firestore.collection('users/' + friendId + '/userData').doc('friendPantries');
+        return firestore.runTransaction(async (transaction) => {
+            var fpDoc = await transaction.get(fpRef);
+            var friendPantries = fpDoc.data().friendPantries;
+            friendPantries.forEach((map, index) => {
+                if (map.id === userId) {
+                    map.email = email;
+                    map.imageURI = image;
                     friendPantries[index] = map;
                 }
             });
