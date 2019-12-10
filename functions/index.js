@@ -156,7 +156,7 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
                 }
             });
             transaction.update(fpRef, { friendPantries: friendPantries });
-        })
+        });
     });
 
     try {
@@ -169,7 +169,8 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
 
 exports.updateFriendInfo = functions.firestore.document('/users/{userID}').onUpdate(async (change, context) => {
 
-    const userId = context.params.userId; // This isn't working from console but should work from within app
+    // const userId = context.params.userId; // This isn't working from console but should work from within app
+    const userId = change.after.data().userId;
     var email = change.after.data().email;
     var image = change.after.data().imageURI;
 
@@ -424,6 +425,28 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
         console.error(error);
     }
 });
+
+exports.updateEmail = functions.https.onCall(async (data, context) => {
+
+    // Deny unauthenticated requests
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Caller is not authenticated');
+    }
+
+    var query = data.query;
+    const userId = context.auth.uid;
+
+    try {
+        // Update email field in user's doc
+        firestore.collection('users').doc(userId).update({email: query});
+    }
+    catch (error) {
+        // Some kind of network/request error; return error message
+        console.error(error.message);
+        throw new functions.https.HttpsError('unknown', 'Server error', { message: error.message });
+    }
+});
+
 
 exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
     const userId = user.uid;
