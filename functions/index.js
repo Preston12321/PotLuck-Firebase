@@ -5,6 +5,7 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 
 const firestore = admin.firestore();
+const storage = admin.storage();
 
 // Fetch api key from environment variable
 const apiKey = functions.config().spoonacular.key;
@@ -451,6 +452,16 @@ exports.updateEmail = functions.https.onCall(async (data, context) => {
 exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
     const userId = user.uid;
     var batch = firestore.batch();
+
+    var doc = await firestore.collection('users/').doc(userId).get();
+    var path = doc.data().imageURI.replace(/gs:\/\/potluck-d1796\.appspot\.com\//, "");
+
+    try {
+        await storage.bucket().file(path).delete();
+    }
+    catch (error) {
+        console.error(error);
+    }
 
     // Get user's list of friends
     var friendDoc = await firestore.collection('friendLists').doc(userId).get();
