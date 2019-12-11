@@ -329,7 +329,7 @@ exports.manageFriendRequests = functions.firestore.document('users/{userId}/user
 });
 
 exports.manageFriendList = functions.firestore.document('friendLists/{userId}').onUpdate(async (change, context) => {
-    const userId = context.params.userId;
+    const userId = context.params.userId; // user changing their friendList
 
     var userDoc = await firestore.collection('users').doc(userId).get();
     var userEmail = userDoc.data().email;
@@ -338,8 +338,8 @@ exports.manageFriendList = functions.firestore.document('friendLists/{userId}').
     var userPantryDoc = await userDoc.ref.collection('userData').doc('pantry').get();
     var userPantry = userPantryDoc.data().ingredients;
 
-    var friends = change.after.data().friendIds;
-    var friendsBefore = change.before.data().friendIds;
+    var friends = change.after.data().friendIds; // updated friendList
+    var friendsBefore = change.before.data().friendIds; // previous friendList before change
 
     var promises = friends.map((id) => {
         if (friendsBefore.includes(id)) return Promise.resolve();
@@ -363,6 +363,44 @@ exports.manageFriendList = functions.firestore.document('friendLists/{userId}').
             });
         });
     });
+
+    promises = promises.concat(friendsBefore.map((id) => { // loop through old friendList
+        if (friends.includes(id)) return Promise.resolve(); // if a friend from the old friendList is also in the new friendList, do nothing
+
+        // if a friend from the old friendList is NOT in the new friendList, they have been removed.
+        var friendFpRef = firestore.collection('users/' + id + '/userData').doc('friendPantries');
+        // var userFpRef = firestore.collection('users/' + userId + '/userData').doc('friendPantries');
+
+        return firestore.runTransaction(async (transaction) => {
+            
+            // get docs
+            var friendFpDoc = await transaction.get(friendFpRef);
+            // var userFpDoc = await transaction.get(userFpRef);
+
+            // remove user from friend's friendPantries
+            var friendFp = friendFpDoc.data().friendPantries;
+            var ffpIndex;
+            friendFp.forEach((map, index) => {
+                if (map.id === userId) {
+                    ffpIndex = index;
+                }
+            });
+            friendFp.splice(ffpIndex, 1);
+            transaction.update(friendFpRef, { friendPantries: friendFp });
+
+            // remove friend from user's friendPantries
+            // var userFp = userFpDoc.data().friendPantries;
+            // var ufpIndex;
+            // userFp.forEach((map, index) => {
+            //     if (map.id === id) {
+            //         ufpIndex = index;
+            //     }
+            // });
+            // userFp.splice(ufpIndex, 1);
+            // transaction.update(userFpRef, { friendPantries: userFp });
+        });
+
+    }));
 
     try {
         await Promise.all(promises);
