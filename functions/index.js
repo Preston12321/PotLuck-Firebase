@@ -102,6 +102,10 @@ exports.recipeInfo = functions.https.onCall(async (data, context) => {
 });
 
 exports.autocomplete = functions.https.onCall(async (data, context) => {
+    /**
+     * On-call function. Takes in a string and finds suggested ingredients using the Spoonacular API autocomplete ingredient endpoint. 
+     * Returns an array of suggested ingredients, each as a map with an "image" and "name" field.
+     */
 
     // Deny unauthenticated requests
     if (!context.auth) {
@@ -136,6 +140,11 @@ exports.autocomplete = functions.https.onCall(async (data, context) => {
 });
 
 exports.updateFriendPantries = functions.firestore.document('/users/{userId}/userData/pantry').onUpdate(async (change, context) => {
+    /**
+     * Triggered when a user's pantry is updated, either by adding or removing an ingredient. 
+     * Takes in the user's updated pantry and updates their information in each of their friends' friendPantries.
+     */
+
     const userId = context.params.userId;
     var pantry = change.after.data().ingredients;
 
@@ -169,6 +178,10 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
 });
 
 exports.updateFriendInfo = functions.firestore.document('/users/{userID}').onUpdate(async (change, context) => {
+    /**
+     * Triggered when a user's user document is updated, by changing their email or profile picture.
+     * Takes in the user's updated user document and updates their information in each of their friends' friendPantries.  
+     */
 
     // const userId = context.params.userId; // This isn't working from console but should work from within app
     const userId = change.after.data().userId;
@@ -387,17 +400,6 @@ exports.manageFriendList = functions.firestore.document('friendLists/{userId}').
             });
             friendFp.splice(ffpIndex, 1);
             transaction.update(friendFpRef, { friendPantries: friendFp });
-
-            // remove friend from user's friendPantries
-            // var userFp = userFpDoc.data().friendPantries;
-            // var ufpIndex;
-            // userFp.forEach((map, index) => {
-            //     if (map.id === id) {
-            //         ufpIndex = index;
-            //     }
-            // });
-            // userFp.splice(ufpIndex, 1);
-            // transaction.update(userFpRef, { friendPantries: userFp });
         });
 
     }));
@@ -410,6 +412,17 @@ exports.manageFriendList = functions.firestore.document('friendLists/{userId}').
 });
 
 exports.newAccount = functions.auth.user().onCreate(async (user) => {
+    /**
+     * Triggered by the creation of a new account.
+     * Takes in information about the user from Firebase Auth and fetches their id and email.
+     * Creates documents in the FireStore database for the user: 
+     * - user doc with their email, ID, and image
+     * - friendList, to be populated with their friends' IDs
+     * - pantry, to be populated with ingredients added by the user
+     * - friendPantries document, to include information about their friends and their pantries
+     * - friendRequests document, to include information about managing friends
+     */
+
     const email = user.email;
     const id = user.uid;
 
@@ -466,6 +479,9 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
 });
 
 exports.updateEmail = functions.https.onCall(async (data, context) => {
+    /**
+     * On-call function. Takes in a string email and sets it as the user's new email in the user's document.
+     */
 
     // Deny unauthenticated requests
     if (!context.auth) {
@@ -488,6 +504,12 @@ exports.updateEmail = functions.https.onCall(async (data, context) => {
 
 
 exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
+    /**
+     * Triggered when an account is deleted. Deletes all of the user's information from the database.
+     * Removes user from their friends' friendLists and friendPantries documents.
+     * Deletes user's userData collection and all of its documents and deletes user's friendList document.
+     */
+
     const userId = user.uid;
     var batch = firestore.batch();
 
