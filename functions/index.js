@@ -18,12 +18,15 @@ const axiosSpoonacular = axios.create({
 // Automatically add API key to all Spoonacular requests
 axiosSpoonacular.interceptors.request.use((config) => {
     if (config.params === undefined || config.params === null) {
-        config.params = {}
+        config.params = {};
     }
     config.params['apiKey'] = apiKey;
     return config;
 });
 
+/**
+ * On-call function. Takes in a comma-separating string of ingredients and responds with a list of recipes found by the Spoonacular API.
+ */
 exports.recipesByIngredients = functions.https.onCall(async (data, context) => {
 
     // Deny unauthenticated requests
@@ -70,6 +73,9 @@ exports.recipesByIngredients = functions.https.onCall(async (data, context) => {
     }
 });
 
+/**
+ * On-call function. Takes in a recipe ID and returns a map of information about the recipe from the Spoonacular API.
+ */
 exports.recipeInfo = functions.https.onCall(async (data, context) => {
 
     // Deny unauthenticated requests
@@ -101,12 +107,11 @@ exports.recipeInfo = functions.https.onCall(async (data, context) => {
     }
 });
 
+/**
+ * On-call function. Takes in a string and finds suggested ingredients using the Spoonacular API autocomplete ingredient endpoint.
+ * Returns an array of suggested ingredients, each as a map with an "image" and "name" field.
+ */
 exports.autocomplete = functions.https.onCall(async (data, context) => {
-    /**
-     * On-call function. Takes in a string and finds suggested ingredients using the Spoonacular API autocomplete ingredient endpoint. 
-     * Returns an array of suggested ingredients, each as a map with an "image" and "name" field.
-     */
-
     // Deny unauthenticated requests
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Caller is not authenticated');
@@ -139,12 +144,11 @@ exports.autocomplete = functions.https.onCall(async (data, context) => {
     }
 });
 
+/**
+ * Triggered when a user's pantry is updated, either by adding or removing an ingredient.
+ * Takes in the user's updated pantry and updates their information in each of their friends' friendPantries.
+ */
 exports.updateFriendPantries = functions.firestore.document('/users/{userId}/userData/pantry').onUpdate(async (change, context) => {
-    /**
-     * Triggered when a user's pantry is updated, either by adding or removing an ingredient. 
-     * Takes in the user's updated pantry and updates their information in each of their friends' friendPantries.
-     */
-
     const userId = context.params.userId;
     var pantry = change.after.data().ingredients;
 
@@ -177,12 +181,11 @@ exports.updateFriendPantries = functions.firestore.document('/users/{userId}/use
 
 });
 
+/**
+ * Triggered when a user's user document is updated, by changing their email or profile picture.
+ * Takes in the user's updated user document and updates their information in each of their friends' friendPantries.
+ */
 exports.updateFriendInfo = functions.firestore.document('/users/{userID}').onUpdate(async (change, context) => {
-    /**
-     * Triggered when a user's user document is updated, by changing their email or profile picture.
-     * Takes in the user's updated user document and updates their information in each of their friends' friendPantries.  
-     */
-
     // const userId = context.params.userId; // This isn't working from console but should work from within app
     const userId = change.after.data().userId;
     var email = change.after.data().email;
@@ -207,7 +210,7 @@ exports.updateFriendInfo = functions.firestore.document('/users/{userID}').onUpd
                 }
             });
             transaction.update(fpRef, { friendPantries: friendPantries });
-        })
+        });
     });
 
     try {
@@ -218,6 +221,13 @@ exports.updateFriendInfo = functions.firestore.document('/users/{userID}').onUpd
 
 });
 
+/**
+ * Triggered when a user's friendRequests document is updated. Checks for changes in the three top-level fields:
+ *  - requestToIds: For any new outgoing requests, adds the requests to the respective users' friendRequests docs
+ *  - requestFromIds: For any new incoming requests, if the user has also sent a request to them, removes corresponding
+ *    requests from both documents then adds the two users to each other's friendsList documents
+ *  - removeIds: For any new IDs in this field, removes each user from the other's friendsList document
+ */
 exports.manageFriendRequests = functions.firestore.document('users/{userId}/userData/friendRequests').onUpdate(async (change, context) => {
     const userId = context.params.userId;
 
@@ -341,12 +351,17 @@ exports.manageFriendRequests = functions.firestore.document('users/{userId}/user
     }
 });
 
+/**
+ * Triggered when a user's friendList document is updated. For any users that were removed,
+ * removes this user's info from the other user's friendPantries doc. For any users that
+ * were add, adds this user's information to their new friend's friendPantries document.
+ */
 exports.manageFriendList = functions.firestore.document('friendLists/{userId}').onUpdate(async (change, context) => {
     const userId = context.params.userId; // user changing their friendList
 
     var userDoc = await firestore.collection('users').doc(userId).get();
     var userEmail = userDoc.data().email;
-    var userImage = userDoc.data().imageURI
+    var userImage = userDoc.data().imageURI;
 
     var userPantryDoc = await userDoc.ref.collection('userData').doc('pantry').get();
     var userPantry = userPantryDoc.data().ingredients;
@@ -385,7 +400,7 @@ exports.manageFriendList = functions.firestore.document('friendLists/{userId}').
         // var userFpRef = firestore.collection('users/' + userId + '/userData').doc('friendPantries');
 
         return firestore.runTransaction(async (transaction) => {
-            
+
             // get docs
             var friendFpDoc = await transaction.get(friendFpRef);
             // var userFpDoc = await transaction.get(userFpRef);
@@ -411,18 +426,17 @@ exports.manageFriendList = functions.firestore.document('friendLists/{userId}').
     }
 });
 
+/**
+ * Triggered by the creation of a new account.
+ * Takes in information about the user from Firebase Auth and fetches their id and email.
+ * Creates documents in the FireStore database for the user:
+ * - user doc with their email, ID, and image
+ * - friendList, to be populated with their friends' IDs
+ * - pantry, to be populated with ingredients added by the user
+ * - friendPantries document, to include information about their friends and their pantries
+ * - friendRequests document, to include information about managing friends
+ */
 exports.newAccount = functions.auth.user().onCreate(async (user) => {
-    /**
-     * Triggered by the creation of a new account.
-     * Takes in information about the user from Firebase Auth and fetches their id and email.
-     * Creates documents in the FireStore database for the user: 
-     * - user doc with their email, ID, and image
-     * - friendList, to be populated with their friends' IDs
-     * - pantry, to be populated with ingredients added by the user
-     * - friendPantries document, to include information about their friends and their pantries
-     * - friendRequests document, to include information about managing friends
-     */
-
     const email = user.email;
     const id = user.uid;
 
@@ -478,11 +492,10 @@ exports.newAccount = functions.auth.user().onCreate(async (user) => {
     }
 });
 
+/**
+ * On-call function. Takes in a string email and sets it as the user's new email in the user's document.
+ */
 exports.updateEmail = functions.https.onCall(async (data, context) => {
-    /**
-     * On-call function. Takes in a string email and sets it as the user's new email in the user's document.
-     */
-
     // Deny unauthenticated requests
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Caller is not authenticated');
@@ -493,7 +506,7 @@ exports.updateEmail = functions.https.onCall(async (data, context) => {
 
     try {
         // Update email field in user's doc
-        firestore.collection('users').doc(userId).update({email: query});
+        firestore.collection('users').doc(userId).update({ email: query });
     }
     catch (error) {
         // Some kind of network/request error; return error message
@@ -502,14 +515,12 @@ exports.updateEmail = functions.https.onCall(async (data, context) => {
     }
 });
 
-
+/**
+ * Triggered when an account is deleted. Deletes all of the user's information from the database.
+ * Removes user from their friends' friendLists and friendPantries documents.
+ * Deletes user's userData collection and all of its documents and deletes user's friendList document.
+ */
 exports.deleteAccount = functions.auth.user().onDelete(async (user) => {
-    /**
-     * Triggered when an account is deleted. Deletes all of the user's information from the database.
-     * Removes user from their friends' friendLists and friendPantries documents.
-     * Deletes user's userData collection and all of its documents and deletes user's friendList document.
-     */
-
     const userId = user.uid;
     var batch = firestore.batch();
 
